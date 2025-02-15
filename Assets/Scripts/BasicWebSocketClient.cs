@@ -1,5 +1,4 @@
 using System;
-using System.Collections;
 using System.Collections.Generic;
 using TMPro;
 using UnityEngine;
@@ -8,15 +7,13 @@ using WebSocketSharp;
 
 public class BasicWebSocketClient : MonoBehaviour
 {
-    private static Queue<Action> _actionToRun = new Queue<Action>();
+    private static Queue<Action> _actionToRun = new Queue<Action>(); // Queue con las acciones a realizar en la GUI
+
     public TMP_Text chatDisplay;  // Texto donde se muestra el historial del chat
     public TMP_InputField inputField; // Input donde el usuario escribe
     public Button sendButton; // Botón para enviar mensajes
     public ScrollRect scrollRect; // Scroll View para manejar el desplazamiento
-    public GameObject server;
-
-    private string user;
-    private string color;
+    public BasicWebSocketServer server; // Servidor del chat
 
     // Instancia del cliente WebSocket
     private WebSocket ws;
@@ -24,7 +21,7 @@ public class BasicWebSocketClient : MonoBehaviour
     // Se ejecuta al iniciar la escena
     void Start()
     {
-        StartCoroutine(TryToConnect());
+        TryToConnect();
 
         sendButton.onClick.AddListener(SendMessageToServer);
         inputField.onSubmit.AddListener(delegate { SendMessageToServer(); });
@@ -36,27 +33,21 @@ public class BasicWebSocketClient : MonoBehaviour
         inputField.ActivateInputField();
     }
 
-    private IEnumerator TryToConnect()
+    private void TryToConnect()
     {
-        bool isConnected = false;
-
         // Crear una instancia del WebSocket apuntando a la URI del servidor
         ws = new WebSocket("ws://127.0.0.1:7777/");
 
         // Evento OnOpen: se invoca cuando se establece la conexión con el servidor
         ws.OnOpen += (sender, e) =>
         {
-            user = "Pepito";
-            color = "#FF5733";
-
-            isConnected = true;
             Debug.Log("WebSocket conectado correctamente.");
         };
 
         // Evento OnMessage: se invoca cuando se recibe un mensaje del servidor
         ws.OnMessage += (sender, e) =>
         {
-            EnqueueUIAction(() => ShowMessageInChat(e.Data));
+            EnqueueUIAction(() => ShowMessageInChat(e.Data)); // Recoge el mensaje y lo imprime en el chat
             Debug.Log("Mensaje recibido: " + e.Data);
         };
 
@@ -69,22 +60,20 @@ public class BasicWebSocketClient : MonoBehaviour
         // Evento OnClose: se invoca cuando se cierra la conexión con el servidor
         ws.OnClose += (sender, e) =>
         {
+            if (e.Code == 1001)
+            {
+                EnqueueUIAction(() => {
+                    ShowMessageInChat("Host desconectado. Reconectando...");
+                    Debug.Log("Activando servidor...");
+                    server.TryToConnect();
+                    TryToConnect();
+                });
+            }
             Debug.Log("WebSocket cerrado. Código: " + e.Code + ", Razón: " + e.Reason);
         };
 
         // Conectar de forma asíncrona al servidor WebSocket
         ws.ConnectAsync();
-
-        yield return new WaitForSeconds(1f);
-
-        if (!isConnected) {
-            Debug.Log("Activando servidor...");
-            server.SetActive(true);
-
-            yield return new WaitForSeconds(1f);
-
-            StartCoroutine(TryToConnect());
-        }
     }
 
     void Update() {
@@ -120,14 +109,11 @@ public class BasicWebSocketClient : MonoBehaviour
         {
             if (!string.IsNullOrEmpty(inputField.text))
             {
-                // Formatear el mensaje con el color del usuario
-                string formattedMessage = $"<color={color}><b>{user}:</b></color> {inputField.text}";
+                ws.Send(inputField.text);
 
                 // Limpiar input y mantener el foco
                 inputField.text = "";
                 inputField.ActivateInputField();
-
-                ws.Send(formattedMessage);
             }
         }
         else
